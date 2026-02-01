@@ -119,4 +119,4 @@ st.markdown(f"### 🧠 Overall Consistency: **{overall:.1f}%**")
 best = summary_df.loc[summary_df["Consistency %"].idxmax(), "Habit"]
 worst = summary_df.loc[summary_df["Consistency %"].idxmin(), "Habit"]
 
-st.write(f"🔥 Best Habit: **{best}**"
+st.write(f"🔥 Best Habit: **{best}**")
