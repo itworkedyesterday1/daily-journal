@@ -2,47 +2,39 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 import calendar
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
-import os
 
 st.set_page_config(page_title="Journal.io", layout="wide")
 
-DATA_FILE = "habit_grid.csv"
-
-# ---------- TITLE ----------
+# ---------------- TITLE ----------------
 st.markdown("""
 <style>
 .title {
-    text-align: center;
-    font-size: 64px;
-    font-weight: 900;
-    letter-spacing: 4px;
-    color: #111;
-    text-shadow:
-        2px 2px 0 #ccc,
-        4px 4px 0 #999,
-        6px 6px 10px rgba(0,0,0,0.3);
+    text-align:center;
+    font-size:56px;
+    font-weight:900;
+    letter-spacing:4px;
+    margin-bottom:10px;
 }
 </style>
 <div class="title">JOURNAL.IO</div>
 """, unsafe_allow_html=True)
 
-# ---------- SESSION STATE ----------
-if "habit_count" not in st.session_state:
-    st.session_state.habit_count = 1
+# ---------------- SESSION STATE ----------------
 if "habits" not in st.session_state:
-    st.session_state.habits = [""]
+    st.session_state.habits = [""] * 10   # 10 default slots
 
-# ---------- MONTH / YEAR ----------
+if "data" not in st.session_state:
+    st.session_state.data = {}  # {(habit, day): bool}
+
+# ---------------- MONTH / YEAR ----------------
 today = date.today()
-c1, c2, c3 = st.columns([1, 2, 1])
+c1, c2, c3 = st.columns([1,2,1])
 
 with c2:
-    y, m = st.columns(2)
-    with y:
+    ycol, mcol = st.columns(2)
+    with ycol:
         year = st.selectbox("Year", [today.year-1, today.year, today.year+1], index=1)
-    with m:
+    with mcol:
         month = st.selectbox("Month", list(calendar.month_name)[1:], index=today.month-1)
 
 month_num = list(calendar.month_name).index(month)
@@ -50,127 +42,118 @@ days_in_month = calendar.monthrange(year, month_num)[1]
 
 st.divider()
 
-# ---------- GRID HEADER + BUTTONS ----------
-hcol, addcol, delcol = st.columns([6, 1, 1])
-
-with hcol:
-    st.subheader("✅ Monthly Habit Grid")
-
-with addcol:
-    if st.session_state.habit_count < 10:
-        if st.button("➕ Add"):
-            st.session_state.habit_count += 1
-            st.session_state.habits.append("")
-
-with delcol:
-    if st.session_state.habit_count > 1:
-        if st.button("➖ Delete"):
-            st.session_state.habit_count -= 1
-            st.session_state.habits.pop()
-
-# ---------- HABIT INPUT INLINE ----------
-for i in range(st.session_state.habit_count):
-    st.session_state.habits[i] = st.text_input(
-        f"Habit {i+1}", st.session_state.habits[i]
-    )
-
-habits = [h for h in st.session_state.habits if h.strip()]
-if not habits:
-    st.warning("Add at least one habit.")
-    st.stop()
-
-# ---------- GRID ----------
-header = st.columns([1.8] + [0.5]*31 + [1])
+# ---------------- GRID HEADER ----------------
+header = st.columns([2] + [0.6]*31 + [0.6])
 header[0].markdown("**Habit**")
+
 for d in range(31):
     header[d+1].markdown(f"**{d+1}**")
-header[-1].markdown("**%**")
 
-habit_results = []
-weekly_results = []
+header[-1].markdown("")
 
-for habit in habits:
-    row = st.columns([1.8] + [0.5]*31 + [1])
-    row[0].markdown(habit)
+# ---------------- GRID BODY ----------------
+active_habits = []
+
+for idx, habit in enumerate(st.session_state.habits):
+    row = st.columns([2] + [0.6]*31 + [0.6])
+
+    # Habit name input
+    habit_name = row[0].text_input(
+        "",
+        habit,
+        key=f"habit_name_{idx}",
+        placeholder="Enter habit"
+    )
+
+    if habit_name.strip():
+        active_habits.append(habit_name)
+
+    st.session_state.habits[idx] = habit_name
 
     ticks = 0
-    weekly = [0, 0, 0, 0, 0]
 
     for d in range(1, 32):
-        key = f"{habit}_{year}_{month}_{d}"
+        key = (habit_name, d)
 
-        if d <= days_in_month:
-            checked = row[d].checkbox("", key=key)
+        if d <= days_in_month and habit_name.strip():
+            checked = row[d].checkbox(
+                "",
+                key=f"{habit_name}_{d}"
+            )
+            st.session_state.data[key] = checked
             if checked:
                 ticks += 1
-                weekly[(d-1)//7] += 1
-                row[d].markdown("🟢")
-            else:
-                row[d].markdown("🔴")
+                row[d].markdown("✔")
         else:
-            row[d].markdown("—")
+            row[d].markdown("")
 
-    consistency = (ticks / days_in_month) * 100
-    habit_results.append(consistency)
-    weekly_results.append(weekly)
+    # Delete habit
+    if row[-1].button("❌", key=f"del_{idx}"):
+        st.session_state.habits.pop(idx)
+        st.rerun()
 
-    row[-1].markdown(f"**{int(consistency)}%**")
-
-# ---------- SAVE ----------
-if st.button("💾 Save Month"):
-    rows = []
-    for habit in habits:
-        for d in range(1, days_in_month+1):
-            rows.append({
-                "Year": year,
-                "Month": month,
-                "Day": d,
-                "Habit": habit,
-                "Done": int(st.session_state.get(f"{habit}_{year}_{month}_{d}", False))
-            })
-    pd.DataFrame(rows).to_csv(DATA_FILE, index=False)
-    st.success("Saved successfully!")
+# ---------------- ADD HABIT ROW ----------------
+if st.button("➕ Add new habit"):
+    st.session_state.habits.append("")
 
 st.divider()
 
-# ---------- OVERVIEW ----------
-st.subheader("📌 Overview")
+# ---------------- ANALYSIS ----------------
+if active_habits:
+    summary = []
+    for habit in active_habits:
+        done = sum(
+            st.session_state.data.get((habit, d), False)
+            for d in range(1, days_in_month+1)
+        )
+        consistency = (done / days_in_month) * 100
+        summary.append({
+            "Habit": habit,
+            "Consistency": consistency
+        })
 
-summary = pd.DataFrame({
-    "Habit": habits,
-    "Consistency %": habit_results
-})
+    df = pd.DataFrame(summary)
 
-st.line_chart(summary.set_index("Habit"))
+    st.subheader("📌 Overview")
+    st.line_chart(df.set_index("Habit"))
 
-overall = sum(habit_results) / len(habit_results)
-best = summary.loc[summary["Consistency %"].idxmax(), "Habit"]
-worst = summary.loc[summary["Consistency %"].idxmin(), "Habit"]
+    overall = df["Consistency"].mean()
 
-st.markdown(f"""
-- **Overall Consistency:** {overall:.1f}%  
-- **Best Habit:** {best}  
-- **Needs Improvement:** {worst}
-""")
+    best = df.loc[df["Consistency"].idxmax(), "Habit"]
+    worst = df.loc[df["Consistency"].idxmin(), "Habit"]
 
-# ---------- PDF EXPORT ----------
-def generate_pdf():
-    file = f"Journal_{month}_{year}.pdf"
-    c = canvas.Canvas(file, pagesize=A4)
-    text = c.beginText(40, 800)
-    text.setFont("Helvetica", 12)
+    st.markdown(f"""
+    **Overall consistency:** {overall:.1f}%  
+    **Strongest habit:** {best}  
+    **Weakest habit:** {worst}
+    """)
 
-    text.textLine(f"Journal.io – {month} {year}")
-    text.textLine("")
+    # ---------------- AI MONTHLY REFLECTION ----------------
+    st.subheader("🤖 AI Monthly Reflection")
 
-    for i, habit in enumerate(habits):
-        text.textLine(f"{habit}: {int(habit_results[i])}%")
+    reflection = []
 
-    c.drawText(text)
-    c.save()
-    return file
+    if overall >= 80:
+        reflection.append("You showed strong overall discipline this month.")
+    elif overall >= 50:
+        reflection.append("Your consistency was moderate, with room to improve.")
+    else:
+        reflection.append("This month showed low consistency, suggesting habits need simplification.")
 
-if st.button("📄 Export Month as PDF"):
-    pdf = generate_pdf()
-    st.success("PDF generated!")
-    st.download_button("Download PDF", open(pdf, "rb"), file_name=pdf)
+    reflection.append(
+        f"Your strongest habit was **{best}**, indicating this behavior fits well into your routine."
+    )
+
+    reflection.append(
+        f"The habit **{worst}** struggled most, likely due to timing, motivation, or unrealistic expectations."
+    )
+
+    reflection.append(
+        "Consider focusing on 1–2 key habits next month and attaching them to an existing routine."
+    )
+
+    for r in reflection:
+        st.write("• " + r)
+
+else:
+    st.info("Add habits to see monthly analysis and reflection.")
