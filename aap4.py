@@ -44,18 +44,20 @@ for i in range(st.session_state.habit_count):
         f"Habit {i+1}", st.session_state.habits[i]
     )
 
-# Add habit button
-if st.session_state.habit_count < 10:
-    if st.button("➕ Add Habit"):
-        st.session_state.habit_count += 1
+col1, col2 = st.columns(2)
 
-habits = [h for h in st.session_state.habits if h.strip() != ""]
+# ➕ Add Habit
+with col1:
+    if st.session_state.habit_count < 10:
+        if st.button("➕ Add Habit"):
+            st.session_state.habit_count += 1
 
-if len(habits) == 0:
-    st.warning("Please enter at least one habit.")
-    st.stop()
-
-st.divider()
+# ➖ Delete Habit
+with col2:
+    if st.session_state.habit_count > 1:
+        if st.button("➖ Delete Habit"):
+            st.session_state.habit_count -= 1
+            st.session_state.habits.pop()
 
 # ------------------ GRID ------------------
 st.subheader("✅ Monthly Habit Grid")
