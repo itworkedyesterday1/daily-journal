@@ -1,159 +1,136 @@
 import streamlit as st
 import pandas as pd
 from datetime import date
-import calendar
 
-st.set_page_config(page_title="Journal.io", layout="wide")
+st.set_page_config(page_title="Journal.io", layout="centered")
 
-# ---------------- TITLE ----------------
+# ---------- TITLE ----------
 st.markdown("""
-<style>
-.title {
-    text-align:center;
-    font-size:56px;
-    font-weight:900;
-    letter-spacing:4px;
-    margin-bottom:10px;
-}
-</style>
-<div class="title">JOURNAL.IO</div>
+<h1 style='text-align:center;'>JOURNAL.IO</h1>
+<p style='text-align:center; color:gray;'>A quiet guide for better days</p>
 """, unsafe_allow_html=True)
 
-# ---------------- SESSION STATE ----------------
+# ---------- SESSION STATE ----------
 if "habits" not in st.session_state:
-    st.session_state.habits = [""] * 10   # 10 default slots
+    st.session_state.habits = ["Exercise", "Read", "Sleep on time"]
 
-if "data" not in st.session_state:
-    st.session_state.data = {}  # {(habit, day): bool}
+if "log" not in st.session_state:
+    st.session_state.log = []
 
-# ---------------- MONTH / YEAR ----------------
 today = date.today()
-c1, c2, c3 = st.columns([1,2,1])
 
-with c2:
-    ycol, mcol = st.columns(2)
-    with ycol:
-        year = st.selectbox("Year", [today.year-1, today.year, today.year+1], index=1)
-    with mcol:
-        month = st.selectbox("Month", list(calendar.month_name)[1:], index=today.month-1)
+# ---------- DAILY CHECK-IN ----------
+st.subheader("🕊️ Daily Check-In")
 
-month_num = list(calendar.month_name).index(month)
-days_in_month = calendar.monthrange(year, month_num)[1]
+energy = st.selectbox("Energy today", ["Low", "Medium", "High"])
+focus = st.selectbox("Focus today", ["Low", "Medium", "High"])
 
-st.divider()
+# ---------- HABIT TRACKER ----------
+st.subheader("✅ Habits")
 
-# ---------------- GRID HEADER ----------------
-header = st.columns([2] + [0.6]*31 + [0.6])
-header[0].markdown("**Habit**")
+daily_entry = {"date": today, "energy": energy, "focus": focus, "habits": {}}
 
-for d in range(31):
-    header[d+1].markdown(f"**{d+1}**")
+for habit in st.session_state.habits:
+    done = st.checkbox(habit)
 
-header[-1].markdown("")
-
-# ---------------- GRID BODY ----------------
-active_habits = []
-
-for idx, habit in enumerate(st.session_state.habits):
-    row = st.columns([2] + [0.6]*31 + [0.6])
-
-    # Habit name input
-    habit_name = row[0].text_input(
-        "",
-        habit,
-        key=f"habit_name_{idx}",
-        placeholder="Enter habit"
-    )
-
-    if habit_name.strip():
-        active_habits.append(habit_name)
-
-    st.session_state.habits[idx] = habit_name
-
-    ticks = 0
-
-    for d in range(1, 32):
-        key = (habit_name, d)
-
-        if d <= days_in_month and habit_name.strip():
-            checked = row[d].checkbox(
-                "",
-                key=f"{habit_name}_{d}"
-            )
-            st.session_state.data[key] = checked
-            if checked:
-                ticks += 1
-                row[d].markdown("✔")
-        else:
-            row[d].markdown("")
-
-    # Delete habit
-    if row[-1].button("❌", key=f"del_{idx}"):
-        st.session_state.habits.pop(idx)
-        st.rerun()
-
-# ---------------- ADD HABIT ROW ----------------
-if st.button("➕ Add new habit"):
-    st.session_state.habits.append("")
-
-st.divider()
-
-# ---------------- ANALYSIS ----------------
-if active_habits:
-    summary = []
-    for habit in active_habits:
-        done = sum(
-            st.session_state.data.get((habit, d), False)
-            for d in range(1, days_in_month+1)
+    why = None
+    if not done:
+        why = st.selectbox(
+            f"Why was '{habit}' missed?",
+            ["Low energy", "Low time", "Low interest"],
+            key=habit
         )
-        consistency = (done / days_in_month) * 100
-        summary.append({
-            "Habit": habit,
-            "Consistency": consistency
-        })
 
-    df = pd.DataFrame(summary)
+    daily_entry["habits"][habit] = {
+        "done": done,
+        "why": why
+    }
 
-    st.subheader("📌 Overview")
-    st.line_chart(df.set_index("Habit"))
+if st.button("Save Day"):
+    st.session_state.log.append(daily_entry)
+    st.success("Day saved. No judgment. Just data.")
 
-    overall = df["Consistency"].mean()
+st.divider()
 
-    best = df.loc[df["Consistency"].idxmax(), "Habit"]
-    worst = df.loc[df["Consistency"].idxmin(), "Habit"]
+# ---------- DAILY FORECAST ----------
+st.subheader("☁️ Tomorrow’s Forecast")
 
-    st.markdown(f"""
-    **Overall consistency:** {overall:.1f}%  
-    **Strongest habit:** {best}  
-    **Weakest habit:** {worst}
-    """)
+if len(st.session_state.log) >= 3:
+    recent = st.session_state.log[-3:]
+    avg_done = sum(
+        sum(h["done"] for h in day["habits"].values())
+        for day in recent
+    ) / (len(recent) * len(st.session_state.habits))
 
-    # ---------------- AI MONTHLY REFLECTION ----------------
-    st.subheader("🤖 AI Monthly Reflection")
-
-    reflection = []
-
-    if overall >= 80:
-        reflection.append("You showed strong overall discipline this month.")
-    elif overall >= 50:
-        reflection.append("Your consistency was moderate, with room to improve.")
+    if avg_done > 0.7:
+        st.write("Energy: High • Best window: Morning")
+    elif avg_done > 0.4:
+        st.write("Energy: Medium • Pace yourself")
     else:
-        reflection.append("This month showed low consistency, suggesting habits need simplification.")
-
-    reflection.append(
-        f"Your strongest habit was **{best}**, indicating this behavior fits well into your routine."
-    )
-
-    reflection.append(
-        f"The habit **{worst}** struggled most, likely due to timing, motivation, or unrealistic expectations."
-    )
-
-    reflection.append(
-        "Consider focusing on 1–2 key habits next month and attaching them to an existing routine."
-    )
-
-    for r in reflection:
-        st.write("• " + r)
-
+        st.write("Energy: Low • Focus on recovery")
 else:
-    st.info("Add habits to see monthly analysis and reflection.")
+    st.write("Not enough data yet.")
+
+st.divider()
+
+# ---------- SILENT PROGRESS ----------
+st.subheader("📈 Silent Progress")
+
+if st.session_state.log:
+    df = []
+    for day in st.session_state.log:
+        completed = sum(h["done"] for h in day["habits"].values())
+        df.append(completed)
+
+    st.line_chart(df)
+    st.caption("Progress isn’t streaks. It’s stability.")
+
+st.divider()
+
+# ---------- AI REFLECTION ----------
+st.subheader("✍️ Reflection (AI-assisted)")
+
+if st.session_state.log:
+    last = st.session_state.log[-1]
+    misses = [
+        h for h, v in last["habits"].items()
+        if not v["done"]
+    ]
+
+    draft = "Today wasn’t perfect — and that’s okay.\n\n"
+
+    if misses:
+        draft += f"You missed {', '.join(misses)}. "
+        draft += "The reason matters more than the miss.\n"
+    else:
+        draft += "You showed up for yourself today.\n"
+
+    draft += "\nWhat would make tomorrow 1% easier?"
+
+    reflection = st.text_area("Edit if you want", draft, height=150)
+else:
+    st.write("Save a day to generate reflection.")
+
+st.divider()
+
+# ---------- FUTURE YOU ----------
+st.subheader("🔮 A Note from You, 30 Days Ahead")
+
+if len(st.session_state.log) >= 5:
+    consistency = sum(
+        sum(h["done"] for h in d["habits"].values())
+        for d in st.session_state.log
+    ) / (len(st.session_state.log) * len(st.session_state.habits))
+
+    if consistency > 0.6:
+        st.write(
+            "If you keep this pace, your confidence compounds quietly. "
+            "Don’t rush. Just stay."
+        )
+    else:
+        st.write(
+            "If this continues, burnout is likely. "
+            "Reduce the load — not your standards."
+        )
+else:
+    st.write("Your future self is still forming.")
